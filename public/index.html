@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#111">
+<title>Navegador do Claude</title>
+<style>
+  :root { color-scheme: dark; --fundo:#111; --painel:#1c1c1e; --texto:#eee; --fraco:#8e8e93; --ok:#30d158; --erro:#ff453a; --aviso:#ffd60a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--fundo); color: var(--texto);
+    font: 15px -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; -webkit-text-size-adjust: 100%; }
+  body { display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) max(12px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(12px, env(safe-area-inset-left)); }
+  header { display: flex; align-items: center; gap: 10px; padding: 10px 0; min-width: 0; }
+  #ponto { width: 10px; height: 10px; border-radius: 50%; background: var(--erro); flex: none; }
+  #ponto.on { background: var(--ok); }
+  #url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    background: var(--painel); padding: 6px 12px; border-radius: 8px; color: var(--fraco); font-size: 14px; }
+  #tela { position: relative; background: #000; border-radius: 10px; overflow: hidden; aspect-ratio: 1180 / 820; max-height: 62vh; width: 100%; margin: 0 auto; }
+  #tela img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  #vazio { position: absolute; inset: 0; display: grid; place-items: center; color: var(--fraco); }
+  #vazio[hidden] { display: none; }
+  #log { flex: 1; min-height: 120px; overflow-y: auto; margin: 10px 0; background: var(--painel); border-radius: 10px;
+    padding: 8px 12px; font: 13px ui-monospace, Menlo, monospace; -webkit-overflow-scrolling: touch; }
+  .linha { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 3px 0; border-bottom: 1px solid #2c2c2e; }
+  .hora { color: var(--fraco); } .acao { color: #64d2ff; font-weight: 600; }
+  .erro .acao { color: var(--erro); } .bloqueio .acao, .confirmação .acao { color: var(--aviso); }
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: grid; place-items: center; padding: 20px; z-index: 10; }
+  #modal[hidden] { display: none; }
+  .caixa { background: var(--painel); border-radius: 16px; padding: 24px; max-width: 520px; width: 100%; border: 2px solid var(--aviso); }
+  .caixa h2 { margin: 0 0 8px; font-size: 20px; } .caixa p { margin: 0 0 20px; font-size: 17px; line-height: 1.4; word-break: break-word; }
+  .botoes { display: flex; gap: 12px; }
+  .botoes button { flex: 1; font-size: 18px; font-weight: 600; padding: 16px; border: 0; border-radius: 12px; color: #fff; }
+  #nao { background: #3a3a3c; } #sim { background: #0a84ff; }
+</style>
+</head>
+<body>
+  <header><span id="ponto"></span><div id="url">conectando…</div></header>
+  <div id="tela"><img id="img" alt=""><div id="vazio">aguardando o navegador…</div></div>
+  <div id="log"></div>
+
+  <div id="modal" hidden>
+    <div class="caixa">
+      <h2>O Claude pede confirmação</h2>
+      <p id="motivo"></p>
+      <div class="botoes"><button id="nao">Recusar</button><button id="sim">Permitir</button></div>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let ws, urlFrame, fila = [];
+
+function linha(l) {
+  const el = document.createElement('div');
+  el.className = 'linha ' + l.acao;
+  const hora = new Date(l.hora).toLocaleTimeString('pt-BR');
+  el.innerHTML = '<span class="hora"></span> <span class="acao"></span> <span class="det"></span>';
+  el.children[0].textContent = hora;
+  el.children[1].textContent = l.acao;
+  el.children[2].textContent = l.detalhe;
+  el.title = l.detalhe;
+  const log = $('log');
+  const noFim = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+  log.appendChild(el);
+  while (log.children.length > 300) log.firstChild.remove();
+  if (noFim) log.scrollTop = log.scrollHeight;
+}
+
+function mostrarModal() {
+  const c = fila[0];
+  $('modal').hidden = !c;
+  if (c) $('motivo').textContent = c.motivo;
+}
+function responder(aprovado) {
+  const c = fila[0];
+  if (c) ws.send(JSON.stringify({ tipo: 'resposta', id: c.id, aprovado }));
+}
+$('sim').onclick = () => responder(true);
+$('nao').onclick = () => responder(false);
+
+function conectar() {
+  if (ws && ws.readyState <= 1) return;
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  ws.binaryType = 'blob';
+  ws.onopen = () => { $('ponto').className = 'on'; };
+  ws.onclose = () => { $('ponto').className = ''; fila = []; mostrarModal(); setTimeout(conectar, 1500); };
+  ws.onmessage = (ev) => {
+    if (ev.data instanceof Blob) {
+      const antigo = urlFrame;
+      urlFrame = URL.createObjectURL(ev.data);
+      $('img').src = urlFrame;
+      $('vazio').hidden = true;
+      if (antigo) setTimeout(() => URL.revokeObjectURL(antigo), 1000);
+      return;
+    }
+    const m = JSON.parse(ev.data);
+    if (m.tipo === 'historico') { $('log').innerHTML = ''; m.linhas.forEach(linha); }
+    else if (m.tipo === 'log') linha(m.linha);
+    else if (m.tipo === 'url') $('url').textContent = m.url;
+    else if (m.tipo === 'confirmar') { if (!fila.some((c) => c.id === m.id)) fila.push(m); mostrarModal(); }
+    else if (m.tipo === 'confirmado') { fila = fila.filter((c) => c.id !== m.id); mostrarModal(); }
+  };
+}
+// O Safari suspende conexões em segundo plano; reconecta ao voltar.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && (!ws || ws.readyState > 1)) conectar();
+});
+conectar();
+</script>
+</body>
+</html>

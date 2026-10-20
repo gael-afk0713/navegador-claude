@@ -1,0 +1,26 @@
+{
+  "name": "navegador-claude",
+  "version": "1.0.0",
+  "description": "Navegador Chromium controlado pelo Claude via MCP, com visão ao vivo para iPad",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/teste.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gael-afk0713/navegador-claude.git"
+  },
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/gael-afk0713/navegador-claude/issues"
+  },
+  "homepage": "https://github.com/gael-afk0713/navegador-claude#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "playwright": "^1.64.1",
+    "ws": "^8.22.0",
+    "zod": "^4.6.7"
+  }
+}
