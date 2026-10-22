@@ -17,6 +17,14 @@ export function registrar(acao, detalhe = '') {
   process.stderr.write(`[navegador] ${acao} ${linha.detalhe}\n`);
 }
 
+// Mensagens da conversa pela visão ao vivo; entram no mesmo histórico para manter a ordem com as ações.
+export function registrarChat(papel, texto) {
+  const linha = { hora: new Date().toISOString(), chat: papel, texto: String(texto).slice(0, 20_000) };
+  historico.push(linha);
+  if (historico.length > 300) historico.shift();
+  bus.emit('log', linha);
+}
+
 export function definirEspectadores(n) {
   espectadores = n;
 }
